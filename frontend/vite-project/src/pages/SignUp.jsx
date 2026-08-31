@@ -22,7 +22,7 @@ function SignUp() {
     setLoader(true);
     try {
       await axiosInstance.post("/users/register", form);
-      console.log("Success")
+      console.log("Success");
     } catch (error) {
       console.log(error);
     }
