@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import axiosInstance from '../../axiosCalls/axios'
+import { Link, useNavigate } from 'react-router-dom'
+import axiosInstance from '../axiosCalls/axios'
 
 function SignUp() {
 
   const [form, setForm] = useState({ name: "", email: "", username: "", password: "" })
   const [err, setErr] = useState('')
   const [loader, setLoader] = useState(false)
+  const navigate =  useNavigate()
 
 
   const handleChange = (e) => {
@@ -20,8 +21,11 @@ function SignUp() {
     try {
        
     await axiosInstance.post('/users/register' , form)
+    navigate('/home')
 
     console.log('User Registered')
+
+
 
     } catch (error) {
       console.log(error)

@@ -12,7 +12,7 @@ const app = express();
 const port = 8001;
 
 mongoose
-  .connect(process.env.dbURL)
+  .connect(process.env.MONGO_URL)
   .then(() => {
     console.log("DB Connected");
   })

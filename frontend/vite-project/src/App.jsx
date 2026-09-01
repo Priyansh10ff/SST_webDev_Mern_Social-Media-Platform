@@ -1,28 +1,56 @@
-import './App.css'
-import Login from './pages/Login.jsx'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import SignUp from './pages/SignUp'
-import Landing from './pages/Landing'
-import Home from './pages/Home'
-
+import "./App.css";
+import Login from "./pages/Login.jsx";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import SignUp from "./pages/SignUp";
+import Landing from "./pages/Landing";
+import Home from "./pages/Home";
+import { AuthProvider } from "./context/authContext.jsx";
+import PublicRoute from "./components/PublicRoute.jsx";
+import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
 function App() {
-
-
   return (
     <>
-      <BrowserRouter>
-        <Routes>
-          <Route path='/' element={<Landing/>}/>
-          <Route path='/login' element={<Login />} />
-          <Route path='/signup' element={<SignUp />} />
-          <Route path='/home' element={ <Home/>}/>
-
-
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <PublicRoute>
+                  <Landing />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/signup"
+              element={
+                <PublicRoute>
+                  <SignUp />
+                </PublicRoute>
+              }
+            />
+            <Route
+              path="/home"
+              element={
+                <ProtectedRoute>
+                  <Home />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </>
-  )
+  );
 }
 
-export default App
+export default App;
