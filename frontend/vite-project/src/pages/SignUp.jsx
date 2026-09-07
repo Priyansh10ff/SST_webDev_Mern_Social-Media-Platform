@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import axiosInstance from '../axiosCalls/axios'
+import { useAuth } from '../context/AuthContext'
 
 function SignUp() {
 
@@ -8,6 +9,7 @@ function SignUp() {
   const [err, setErr] = useState('')
   const [loader, setLoader] = useState(false)
   const navigate =  useNavigate()
+  const { setUser } = useAuth()
 
 
   const handleChange = (e) => {
@@ -18,9 +20,10 @@ function SignUp() {
     e.preventDefault()
     setErr('')
     setLoader(true)
-    try {
+    try { 
        
-    await axiosInstance.post('/users/register' , form)
+    const response = await axiosInstance.post('/users/register' , form)
+    setUser(response.data)
     navigate('/home')
 
     console.log('User Registered')
@@ -29,6 +32,8 @@ function SignUp() {
 
     } catch (error) {
       console.log(error)
+    } finally {
+      setLoader(false)
     }
   }
 
@@ -49,13 +54,13 @@ function SignUp() {
             <p className="mt-1 text-sm text-slate-500">Sing up to continue to SST Social.</p>
           </div>
 
-          <form className="space-y-5">
+          <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="name" className="mb-2 block text-sm font-medium text-slate-700">Name</label>
               <input
                 id="name"
                 name="name"
-                type="name"
+                type="text"
                 placeholder="name"
                 value={form.name}
                 onChange={handleChange}
@@ -69,7 +74,7 @@ function SignUp() {
               <input
                 id="username"
                 name="username"
-                type="usernam"
+                type="text"
                 placeholder="username"
                 value={form.username}
                 onChange={handleChange}
@@ -106,9 +111,8 @@ function SignUp() {
             </div>
 
             <button
-              type="button"
+              type="submit"
               className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.99]"
-              onClick={handleSubmit}
             >
               Sign up
             </button>
