@@ -4,34 +4,28 @@ import axiosInstance from '../axiosCalls/axios'
 import { useAuth } from '../context/AuthContext'
 
 function SignUp() {
-
-  const [form, setForm] = useState({ name: "", email: "", username: "", password: "" })
+  const [form, setForm] = useState({ name: '', email: '', username: '', password: '' })
   const [err, setErr] = useState('')
   const [loader, setLoader] = useState(false)
-  const navigate =  useNavigate()
+  const navigate = useNavigate()
   const { setUser } = useAuth()
 
-
   const handleChange = (e) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setErr('')
     setLoader(true)
-    try { 
-       
-    const response = await axiosInstance.post('/users/register' , form)
-    setUser(response.data)
-    navigate('/home')
 
-    console.log('User Registered')
-
-
-
+    try {
+      const response = await axiosInstance.post('/users/register', form)
+      setUser(response.data.user)
+      navigate('/home', { replace: true })
     } catch (error) {
       console.log(error)
+      setErr(error.response?.data?.message || 'Registration failed. Please try again.')
     } finally {
       setLoader(false)
     }
@@ -50,9 +44,11 @@ function SignUp() {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <div className="mb-6">
-            <h2 className="text-xl font-semibold text-slate-900">Welcome back</h2>
-            <p className="mt-1 text-sm text-slate-500">Sing up to continue to SST Social.</p>
+            <h2 className="text-xl font-semibold text-slate-900">Create your account</h2>
+            <p className="mt-1 text-sm text-slate-500">Sign up to continue to SST Social.</p>
           </div>
+
+          {err && <p className="mb-4 text-sm text-red-600">{err}</p>}
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
@@ -64,13 +60,12 @@ function SignUp() {
                 placeholder="name"
                 value={form.name}
                 onChange={handleChange}
-
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
 
             <div>
-              <label htmlFor="username" className="mb-2 block text-sm font-medium text-slate-700">username</label>
+              <label htmlFor="username" className="mb-2 block text-sm font-medium text-slate-700">Username</label>
               <input
                 id="username"
                 name="username"
@@ -81,7 +76,6 @@ function SignUp() {
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
-
 
             <div>
               <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-700">Email</label>
@@ -95,7 +89,6 @@ function SignUp() {
                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
-
 
             <div>
               <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-700">Password</label>
@@ -112,14 +105,15 @@ function SignUp() {
 
             <button
               type="submit"
-              className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.99]"
+              disabled={loader}
+              className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Sign up
+              {loader ? 'Signing up...' : 'Sign up'}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-slate-500">
-            Don't have an account?{' '}
+            Already have an account?{' '}
             <Link to="/login" className="font-semibold text-indigo-600 hover:text-indigo-700">
               Login
             </Link>

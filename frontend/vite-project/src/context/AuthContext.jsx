@@ -8,21 +8,42 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    axiosInstance
-      .get("/users/me")
-      .then((res) => {
-        setUser(res.data);
-      })
-      .catch((error) => {
-        console.log(error);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    let mounted = true;
+
+    const checkAuth = async () => {
+      try {
+        const response = await axiosInstance.get("/users/me");
+        if (mounted) {
+          setUser(response.data);
+        }
+      } catch (error) {
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    checkAuth();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
+  const logout = async () => {
+    try {
+      await axiosInstance.post("/users/logout");
+    } finally {
+      setUser(null);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, setLoading }}>
+    <AuthContext.Provider value={{ user, setUser, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );
