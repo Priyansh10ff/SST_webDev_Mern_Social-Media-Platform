@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 import axiosInstance from "../axiosCalls/axios";
+import { useAuth } from "../context/AuthContext";
 
 const stories = [
   { name: "Your Story", initials: "You", tone: "from-indigo-500 to-violet-500" },
@@ -20,15 +20,130 @@ function Avatar({ initials, tone = "from-slate-700 to-slate-900", size = "h-11 w
 }
 
 function Home() {
-  const { user: loggedInUser, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const fileInputRef = useRef(null);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [createType, setCreateType] = useState(null);
-  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [reels, setReels] = useState([]);
+  const [feedLoading, setFeedLoading] = useState(true);
+  const [feedError, setFeedError] = useState("");
+
+  // CREATE FLOW STATE:
+  // One simple composer supports both posts and reels.
+  // contentType decides which backend endpoint and file field we use.
+  const [contentType, setContentType] = useState("post");
   const [caption, setCaption] = useState("");
-  const [createError, setCreateError] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
   const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  // HOME FEED FETCH:
+  // Keep the flow simple: fetch posts first, then fetch reels.
+  // Each request has its own error handling so one API failing does not stop
+  // the other content type from being loaded.
+  useEffect(() => {
+    const fetchPosts = async () => {
+      try {
+        const response = await axiosInstance.get("/post");
+        setPosts(response.data.posts || []);
+      } catch (error) {
+        console.error("Posts fetch failed:", error);
+        setFeedError(
+          error.response?.data?.message || "Unable to load posts."
+        );
+      }
+    };
+
+    const fetchReels = async () => {
+      try {
+        const response = await axiosInstance.get("/reel");
+        setReels(response.data.reels || []);
+      } catch (error) {
+        console.error("Reels fetch failed:", error);
+        setFeedError(
+          error.response?.data?.message || "Unable to load reels."
+        );
+      }
+    };
+
+    const loadFeed = async () => {
+      try {
+        setFeedLoading(true);
+        setFeedError("");
+
+        await fetchPosts();
+        await fetchReels();
+      } finally {
+        setFeedLoading(false);
+      }
+    };
+
+    loadFeed();
+  }, []);
+
+  // CREATE POST / REEL:
+  // We send FormData because both backend create routes accept an uploaded file.
+  const handleCreateContent = async (event) => {
+    event.preventDefault();
+
+    if (!caption.trim()) {
+      setCreateError("Please add a caption.");
+      return;
+    }
+
+    if (!selectedFile) {
+      setCreateError(
+        contentType === "post"
+          ? "Please select an image."
+          : "Please select a video."
+      );
+      return;
+    }
+
+    try {
+      setCreateLoading(true);
+      setCreateError("");
+
+      const formData = new FormData();
+      formData.append("caption", caption.trim());
+      formData.append(
+        contentType === "post" ? "image" : "video",
+        selectedFile
+      );
+
+      if (contentType === "post") {
+        const response = await axiosInstance.post("/post/create", formData);
+        setPosts((prevPosts) => [response.data.post, ...prevPosts]);
+      } else {
+        const response = await axiosInstance.post("/reel/createReel", formData);
+        setReels((prevReels) => [response.data.reel, ...prevReels]);
+      }
+
+      setCaption("");
+      setSelectedFile(null);
+      event.target.reset();
+    } catch (error) {
+      console.error("Content creation failed:", error);
+      setCreateError(
+        error.response?.data?.message || "Unable to create content."
+      );
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+    setCreateError("");
+  };
+
+  const handleContentTypeChange = (type) => {
+    setContentType(type);
+    setSelectedFile(null);
+    setCreateError("");
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -37,74 +152,6 @@ function Home() {
 
   const getInitials = (name) =>
     name?.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "U";
-
-  const openCreateModal = (type) => {
-    setCreateType(type);
-    setSelectedMedia(null);
-    setCaption("");
-    setCreateError("");
-    setIsCreateOpen(true);
-  };
-
-  const closeCreateModal = () => {
-    if (createLoading) return;
-    setIsCreateOpen(false);
-    setCreateType(null);
-    setSelectedMedia(null);
-    setCaption("");
-    setCreateError("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const handleMediaChange = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const isValidType = createType === "post"
-      ? file.type.startsWith("image/")
-      : file.type.startsWith("video/");
-
-    if (!isValidType) {
-      setCreateError(`Please choose a valid ${createType === "post" ? "image" : "video"} file.`);
-      event.target.value = "";
-      return;
-    }
-
-    setSelectedMedia(file);
-    setCreateError("");
-  };
-
-  const handleCreateSubmit = async (event) => {
-    event.preventDefault();
-
-    if (!selectedMedia) {
-      setCreateError(`Please select a ${createType === "post" ? "image" : "video"} first.`);
-      return;
-    }
-
-    if (caption.length > 500) {
-      setCreateError("Caption cannot be more than 500 characters.");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("caption", caption.trim());
-    formData.append(createType === "post" ? "image" : "video", selectedMedia);
-
-    try {
-      setCreateLoading(true);
-      await axiosInstance.post(
-        createType === "post" ? "/post/create" : "/reel/createReel",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-      closeCreateModal();
-    } catch (error) {
-      setCreateError(error.response?.data?.message || "Unable to publish. Please try again.");
-    } finally {
-      setCreateLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#f6f7fb] text-slate-900">
@@ -128,11 +175,11 @@ function Home() {
           <div className="flex items-center gap-2">
             <button className="rounded-full p-2.5 text-slate-500 transition hover:bg-slate-100" aria-label="Notifications">♡</button>
             <button
-              onClick={() => navigate(`/profile/${loggedInUser?.username}`)}
+              onClick={() => navigate(`/profile/${user?.username}`)}
               className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1.5 pl-1.5 pr-3 transition hover:border-slate-300 hover:shadow-sm"
             >
-              <Avatar initials={getInitials(loggedInUser?.name)} tone="from-indigo-500 to-violet-500" size="h-8 w-8" />
-              <span className="hidden text-sm font-semibold sm:block">{loggedInUser?.name || "You"}</span>
+              <Avatar initials={getInitials(user?.name)} tone="from-indigo-500 to-violet-500" size="h-8 w-8" />
+              <span className="hidden text-sm font-semibold sm:block">{user?.name || "You"}</span>
             </button>
             <button onClick={handleLogout} className="hidden rounded-full px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 sm:block">Logout</button>
           </div>
@@ -147,7 +194,7 @@ function Home() {
                 <span className="text-lg">⌂</span>
                 <span className="text-sm font-bold text-indigo-700">Home Feed</span>
               </button>
-              <button onClick={() => navigate(`/profile/${loggedInUser?.username}`)} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-slate-600 transition hover:bg-slate-50">
+              <button onClick={() => navigate(`/profile/${user?.username}`)} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-slate-600 transition hover:bg-slate-50">
                 <span className="text-lg">◉</span>
                 <span className="text-sm font-semibold">My Profile</span>
               </button>
@@ -177,7 +224,7 @@ function Home() {
                 <button key={story.name} className="group flex w-[76px] shrink-0 flex-col items-center gap-2">
                   <div className={`rounded-full bg-gradient-to-br ${story.tone} p-[3px] transition group-hover:scale-105`}>
                     <div className="rounded-full bg-white p-[2px]">
-                      <Avatar initials={index === 0 ? getInitials(loggedInUser?.name) : story.initials} tone={story.tone} size="h-12 w-12" />
+                      <Avatar initials={index === 0 ? getInitials(user?.name) : story.initials} tone={story.tone} size="h-12 w-12" />
                     </div>
                   </div>
                   <span className="w-full truncate text-center text-[11px] font-semibold text-slate-600">{index === 0 ? "Your Story" : story.name}</span>
@@ -186,93 +233,220 @@ function Home() {
             </div>
           </div>
 
-          <div className="mb-5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <Avatar initials={getInitials(loggedInUser?.name)} tone="from-indigo-500 to-violet-500" />
-              <button className="flex-1 rounded-2xl bg-slate-50 px-4 py-3 text-left text-sm text-slate-400 transition hover:bg-slate-100">
-                What’s on your mind, {loggedInUser?.name?.split(" ")[0] || "there"}?
+          {/* CREATE POST / REEL COMPOSER */}
+          <form
+            onSubmit={handleCreateContent}
+            className="mb-5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-start gap-3">
+              <Avatar initials={getInitials(user?.name)} tone="from-indigo-500 to-violet-500" />
+
+              <textarea
+                value={caption}
+                onChange={(event) => setCaption(event.target.value)}
+                maxLength={500}
+                rows={2}
+                placeholder={`What's on your mind, ${user?.name?.split(" ")[0] || "there"}?`}
+                className="flex-1 resize-none rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:bg-slate-100"
+              />
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => handleContentTypeChange("post")}
+                className={contentType === "post" ? "rounded-xl bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700" : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50"}
+              >
+                ▧ Post
               </button>
-              <button onClick={() => openCreateModal("post")} className="hidden rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-indigo-700 sm:block">+ Post</button>
-            </div>
 
-            <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3">
-              <button onClick={() => openCreateModal("post")} className="rounded-xl px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50">▧ Add Image</button>
-              <button onClick={() => openCreateModal("reel")} className="rounded-xl px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50">▶ Add Reel</button>
-            </div>
-          </div>
+              <button
+                type="button"
+                onClick={() => handleContentTypeChange("reel")}
+                className={contentType === "reel" ? "rounded-xl bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700" : "rounded-xl px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50"}
+              >
+                ▶ Reel
+              </button>
 
-          {isCreateOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-labelledby="composer-title">
-              <form onSubmit={handleCreateSubmit} className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
-                <div className="flex items-center justify-between">
-                  <h2 id="composer-title" className="text-lg font-black">Create {createType === "post" ? "post" : "reel"}</h2>
-                  <button type="button" onClick={closeCreateModal} className="rounded-full px-2 py-1 text-xl text-slate-400 hover:bg-slate-100" aria-label="Close">×</button>
-                </div>
+              <label className="cursor-pointer rounded-xl px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50">
+                {contentType === "post" ? "Choose Image" : "Choose Video"}
                 <input
-                  ref={fileInputRef}
-                  id="composer-file"
                   type="file"
-                  accept={createType === "post" ? "image/*" : "video/*"}
-                  onChange={handleMediaChange}
+                  accept={contentType === "post" ? "image/*" : "video/*"}
+                  onChange={handleFileChange}
                   className="hidden"
                 />
-                <label htmlFor="composer-file" className="mt-5 inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700 hover:shadow-md">
-                  Choose file
-                </label>
-                <p className="mt-2 min-h-4 text-xs text-slate-500">{selectedMedia?.name || "No file selected"}</p>
-                <textarea
-                  value={caption}
-                  onChange={(event) => setCaption(event.target.value)}
-                  maxLength={500}
-                  rows={4}
-                  placeholder="Write a caption..."
-                  className="mt-4 w-full resize-none rounded-2xl border border-slate-300 bg-white p-4 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-                />
-                <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
-                  <span>{caption.length}/500</span>
-                </div>
-                {createError && <p className="mt-3 text-sm font-semibold text-red-600">{createError}</p>}
-                <button type="submit" disabled={createLoading} className="mt-5 w-full rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
-                  {createLoading ? "Publishing..." : `Publish ${createType === "post" ? "post" : "reel"}`}
-                </button>
-              </form>
+              </label>
+
+              <button
+                type="submit"
+                disabled={createLoading}
+                className="ml-auto rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {createLoading ? "Creating..." : contentType === "post" ? "Create Post" : "Create Reel"}
+              </button>
             </div>
-          )}
+
+            {selectedFile && (
+              <p className="mt-2 text-xs text-slate-500">Selected: {selectedFile.name}</p>
+            )}
+
+            {createError && (
+              <p className="mt-2 text-xs text-red-500">{createError}</p>
+            )}
+          </form>
 
           <div className="space-y-5">
-            {[1, 2].map((item) => (
-              <article key={item} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            {feedLoading && (
+              <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">
+                Loading your feed...
+              </div>
+            )}
+
+            {!feedLoading && feedError && (
+              <div className="rounded-3xl border border-red-100 bg-red-50 p-5 text-sm text-red-600 shadow-sm">
+                {feedError}
+              </div>
+            )}
+
+            {!feedLoading && !feedError && posts.length === 0 && reels.length === 0 && (
+              <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                <p className="font-bold text-slate-700">Your feed is empty</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  Create a post or reel to get started.
+                </p>
+              </div>
+            )}
+
+            {/* POSTS: render real API data returned by GET /post. */}
+            {posts.map((post) => (
+              <article
+                key={post._id}
+                className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+              >
                 <div className="flex items-center justify-between px-5 py-4">
                   <div className="flex items-center gap-3">
-                    <Avatar initials={item === 1 ? "AN" : "RO"} tone={item === 1 ? "from-pink-500 to-violet-500" : "from-cyan-500 to-blue-500"} />
+                    <img
+                      src={
+                        post.author?.profileImage ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          post.author?.name || "User"
+                        )}&background=6366f1&color=fff`
+                      }
+                      alt={post.author?.name || "User"}
+                      className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white"
+                    />
                     <div>
-                      <p className="text-sm font-bold">{item === 1 ? "Ananya Sharma" : "Rohan Das"}</p>
-                      <p className="text-xs text-slate-400">@{item === 1 ? "ananya" : "rohan"} · 2h ago</p>
+                      <p className="text-sm font-bold">
+                        {post.author?.name || "Unknown User"}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        @{post.author?.username || "user"} ·{" "}
+                        {new Date(post.createdAt).toLocaleString()}
+                      </p>
                     </div>
                   </div>
-                  <button className="rounded-full px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-50">•••</button>
+                  <button className="rounded-full px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-50">
+                    •••
+                  </button>
                 </div>
 
-                {item === 1 ? (
-                  <div className="flex aspect-[4/3] items-center justify-center bg-gradient-to-br from-indigo-100 via-white to-violet-100 text-sm font-semibold text-slate-400">
-                    Image preview
-                  </div>
-                ) : (
-                  <div className="flex aspect-[4/3] items-center justify-center bg-slate-950 text-sm font-semibold text-white/50">
-                    Video preview
-                  </div>
+                {post.image && (
+                  <img
+                    src={post.image}
+                    alt={post.caption || "Post"}
+                    className="max-h-[620px] w-full object-cover"
+                  />
                 )}
 
                 <div className="px-5 pb-5 pt-4">
-                  <p className="text-sm leading-6 text-slate-700">{item === 1 ? "Building something cool today 🚀" : "A tiny break between classes."}</p>
+                  <p className="text-sm leading-6 text-slate-700">
+                    {post.caption}
+                  </p>
+
+                  {/* Like/comment counts stay ready for the next feature pass. */}
                   <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
-                    <span>24 likes</span>
-                    <span>6 comments</span>
+                    <span>0 likes</span>
+                    <span>0 comments</span>
                   </div>
+
                   <div className="mt-4 flex border-t border-slate-100 pt-3">
-                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">♡ Like</button>
-                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">◌ Comment</button>
-                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">↗ Share</button>
+                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                      ♡ Like
+                    </button>
+                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                      ◌ Comment
+                    </button>
+                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                      ↗ Share
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+
+            {/* REELS: render real API data returned by GET /reel. */}
+            {reels.map((reel) => (
+              <article
+                key={reel._id}
+                className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+              >
+                <div className="flex items-center justify-between px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={
+                        reel.author?.profileImage ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          reel.author?.name || "User"
+                        )}&background=6366f1&color=fff`
+                      }
+                      alt={reel.author?.name || "User"}
+                      className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-white"
+                    />
+                    <div>
+                      <p className="text-sm font-bold">
+                        {reel.author?.name || "Unknown User"}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        @{reel.author?.username || "user"} ·{" "}
+                        {new Date(reel.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <button className="rounded-full px-2 py-1 text-lg leading-none text-slate-400 hover:bg-slate-50">
+                    •••
+                  </button>
+                </div>
+
+                {reel.video && (
+                  <video
+                    src={reel.video}
+                    controls
+                    className="max-h-[620px] w-full bg-black object-contain"
+                  />
+                )}
+
+                <div className="px-5 pb-5 pt-4">
+                  <p className="text-sm leading-6 text-slate-700">
+                    {reel.caption}
+                  </p>
+
+                  {/* Like/comment counts stay ready for the next feature pass. */}
+                  <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+                    <span>0 likes</span>
+                    <span>0 comments</span>
+                  </div>
+
+                  <div className="mt-4 flex border-t border-slate-100 pt-3">
+                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                      ♡ Like
+                    </button>
+                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                      ◌ Comment
+                    </button>
+                    <button className="flex-1 rounded-xl py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                      ↗ Share
+                    </button>
                   </div>
                 </div>
               </article>

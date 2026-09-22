@@ -1,15 +1,11 @@
-// baseUrl - 
+// baseUrl -
 // Headers ; content-type : JSOn
 // cookies
-import axios from 'axios'
+import axios from "axios";
 
 const axiosInstance = axios.create({
-   baseURL : 'http://localhost:8084',
-   withCredentials : true,
-   headers : {
-     "Content-Type":"application/json"
-   }
+  baseURL: "http://localhost:8084",
+  withCredentials: true,
+});
 
-})
-
-export default axiosInstance
+export default axiosInstance;

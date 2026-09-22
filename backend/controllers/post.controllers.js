@@ -5,7 +5,7 @@ import User from "../models/user.model.js";
 // create post
 export const createPost = async (req, res) => {
     try {
-        const { caption = '' } = req.body
+        const { caption } = req.body
 
         if (caption.length > 500) {
             res.status(401).json({ message: 'Caption Cannot be more than 500 characters ' })
@@ -50,7 +50,23 @@ export const createPost = async (req, res) => {
     }
 }
 
-// get post
+// get all posts
+// Fetch the latest posts for the home feed and populate author details so
+// the frontend can render the post card without making another user request.
+export const getPosts = async (req, res) => {
+    try {
+        const posts = await Post.find()
+            .populate("author", "name username profileImage")
+            .sort({ createdAt: -1 });
 
+        return res.status(200).json({
+            message: "Posts fetched successfully",
+            posts
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ message: "Internal Server Error" });
+    }
+};
 
 // delete post
