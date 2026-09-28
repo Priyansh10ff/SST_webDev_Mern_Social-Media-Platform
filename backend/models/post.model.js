@@ -2,25 +2,25 @@ import mongoose from "mongoose";
 
 const postSchema = new mongoose.Schema(
     {
-
-        author:{
+        author: {
             type: mongoose.Schema.Types.ObjectId,
-            ref : 'User',
+            ref: "User",
             required: true
         },
-
-        caption : {
-            type : String,
-            maxlength : 500
+        caption: {
+            type: String,
+            trim: true,
+            maxlength: 500
         },
-
-        image : {
-            type : String
+        image: {
+            type: String
         },
-
-        likes : []
-
-
+        likes: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User"
+            }
+        ]
     },
     { timestamps: true }
 );
