@@ -1,14 +1,32 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useDispatch, useSelector } from 'react-redux'
 import axiosInstance from '../axiosCalls/axios'
 import { useAuth } from '../context/AuthContext'
+import { fetchPostsByUsername, selectPostsByUsername, updatePostLike } from '../redux/postsSlice'
+import { fetchReelsByUsername, selectReelsByUsername } from '../redux/reelsSlice'
+import { fetchProfileByUsername, removeProfileKey, selectProfileByUsername, upsertProfile } from '../redux/profilesSlice'
+import { addFollowing, patchCurrentUser, removeFollowing } from '../redux/authSlice'
 
 function Profile() {
     const { username } = useParams()
     const navigate = useNavigate()
-    const { user: loggedInUser, setUser } = useAuth()
-    const [userData, setUserData] = useState(null)
-    const [loading, setLoading] = useState(true)
+    const { user: loggedInUser } = useAuth()
+
+    // REDUX STEP 9: PROFILE READS THE SAME STORE AS HOME
+    //
+    // Profile no longer owns a second independent "profilePosts" array.
+    // Both Home and Profile now read Post entities from state.posts.items.
+    const dispatch = useDispatch()
+    const userData = useSelector((state) => selectProfileByUsername(state, username))
+    const loading = useSelector((state) => state.profiles.loadingByUsername[username] ?? true)
+    const profilePosts = useSelector((state) => selectPostsByUsername(state, username))
+    const postsLoading = useSelector((state) => state.posts.loading)
+    const postsError = useSelector((state) => state.posts.error)
+    const profileReels = useSelector((state) => selectReelsByUsername(state, username))
+    const reelsLoading = useSelector((state) => state.reels.loading)
+    const reelsError = useSelector((state) => state.reels.error)
+
     const [isFollowing, setIsFollowing] = useState(false)
     const [actionLoading, setActionLoading] = useState(false)
     const [isEditOpen, setIsEditOpen] = useState(false)
@@ -17,103 +35,31 @@ function Profile() {
     const [previewImage, setPreviewImage] = useState('')
     const [editError, setEditError] = useState('')
     const [editLoading, setEditLoading] = useState(false)
-    const [profilePosts, setProfilePosts] = useState([])
-    const [postsLoading, setPostsLoading] = useState(true)
-    const [postsError, setPostsError] = useState('')
     const [likeLoading, setLikeLoading] = useState({})
-    const [profileReels, setProfileReels] = useState([])
     const [activeContentTab, setActiveContentTab] = useState('posts')
-    const [reelsLoading, setReelsLoading] = useState(true)
-    const [reelsError, setReelsError] = useState('')
     const fileInputRef = useRef(null)
-
-    // REDUX TEACHING POINT:
-    // Home.jsx already keeps the feed in its own local "posts" state.
-    // Profile.jsx now keeps some of those SAME Post documents again in "profilePosts".
-    // If Post #123 is liked here, this local copy changes, but Home's local copy does not.
-    // If it is liked on Home, this copy does not know about that change either.
-    // The backend has one Post #123, but the frontend can now hold multiple unsynchronised copies.
-    // Do NOT fix this with Redux yet — this duplication is intentional so the next class can
-    // move shared post state into a single Redux store and demonstrate the problem Redux solves.
 
     const isOwnProfile = loggedInUser?.username === username
 
-    const fetchProfile = async () => {
-        try {
-            const user = await axiosInstance.get(`/users/profile/${username}`)
-            setUserData(user.data.userData)
-            return user.data.userData
-        } catch (error) {
-            console.error("Failed to fetch profile data:", error)
-            return null
-        }
-    }
+    // Every route hydrates the same Redux store. A hard refresh therefore
+    // rebuilds exactly the server state this profile needs.
+    useEffect(() => {
+        dispatch(fetchProfileByUsername(username))
+        dispatch(fetchPostsByUsername(username))
+        dispatch(fetchReelsByUsername(username))
+    }, [username, dispatch])
 
     useEffect(() => {
-        const loadProfile = async () => {
-            try {
-                setLoading(true)
-
-                const profile = await fetchProfile()
-                if (!profile || isOwnProfile) return
-
-                const meResponse = await axiosInstance.get('/users/me')
-                const myFollowingList = meResponse.data.followings || []
-
-                setIsFollowing(
-                    myFollowingList.some(
-                        (id) => id.toString() === profile._id.toString()
-                    )
-                )
-            } finally {
-                setLoading(false)
-            }
+        if (!userData || isOwnProfile) {
+            setIsFollowing(false)
+            return
         }
 
-        loadProfile()
-    }, [username, isOwnProfile])
-
-    useEffect(() => {
-        const fetchProfilePosts = async () => {
-            try {
-                setPostsLoading(true)
-                setPostsError('')
-
-                const response = await axiosInstance.get(`/post/user/${username}`)
-                setProfilePosts(response.data.posts || [])
-            } catch (error) {
-                console.error("Failed to fetch profile posts:", error)
-                setPostsError(
-                    error.response?.data?.message || "Unable to load posts."
-                )
-            } finally {
-                setPostsLoading(false)
-            }
-        }
-
-        fetchProfilePosts()
-    }, [username])
-
-    useEffect(() => {
-        const fetchProfileReels = async () => {
-            try {
-                setReelsLoading(true)
-                setReelsError('')
-
-                const response = await axiosInstance.get(`/reel/user/${username}`)
-                setProfileReels(response.data.reels || [])
-            } catch (error) {
-                console.error("Failed to fetch profile reels:", error)
-                setReelsError(
-                    error.response?.data?.message || "Unable to load reels."
-                )
-            } finally {
-                setReelsLoading(false)
-            }
-        }
-
-        fetchProfileReels()
-    }, [username])
+        const followingIds = loggedInUser?.followings || []
+        setIsFollowing(
+            followingIds.some((item) => (item?._id || item)?.toString() === userData._id?.toString())
+        )
+    }, [userData, isOwnProfile, loggedInUser])
 
     useEffect(() => {
         return () => {
@@ -129,27 +75,17 @@ function Profile() {
         try {
             setLikeLoading((prev) => ({ ...prev, [postId]: true }))
 
-            const response = await axiosInstance.post(`/post/likes/${postId}`)
+            const response = await axiosInstance.patch(`/posts/${postId}/like`)
 
-            // REDUX TEACHING POINT:
-            // We are updating ONLY Profile.jsx's copy of this post.
-            // Home.jsx may already have the same post inside its own local state, and that copy
-            // will stay stale until Home fetches again. Next class: centralise shared posts in Redux.
-            setProfilePosts((prev) =>
-                prev.map((post) => {
-                    if (post._id !== postId) return post
-
-                    const myId = loggedInUser?._id
-                    const currentLikes = post.likes || []
-
-                    return {
-                        ...post,
-                        likes: response.data.liked
-                            ? [...currentLikes, myId]
-                            : currentLikes.filter(
-                                (id) => (id?._id || id)?.toString() !== myId?.toString()
-                            )
-                    }
+            // REDUX STEP 11: ONE LIKE ACTION, ONE SHARED STATE UPDATE
+            //
+            // We no longer call setProfilePosts(...).
+            // Updating Redux means Home and Profile observe the same Post state.
+            dispatch(
+                updatePostLike({
+                    postId,
+                    userId: loggedInUser?._id,
+                    liked: response.data.liked
                 })
             )
         } catch (error) {
@@ -169,8 +105,12 @@ function Profile() {
                 await axiosInstance.post(`/users/${userData._id}/follow`)
             }
 
-            setIsFollowing((prev) => !prev)
-            await fetchProfile()
+            if (isFollowing) {
+                dispatch(removeFollowing(userData._id))
+            } else {
+                dispatch(addFollowing(userData._id))
+            }
+            dispatch(fetchProfileByUsername(username))
         } catch (error) {
             console.error("Follow action failed:", error)
             alert(error.response?.data?.message || "Something went wrong")
@@ -258,7 +198,7 @@ function Profile() {
                 formData.append('profileImage', selectedImage)
             }
 
-            const response = await axiosInstance.post('/users/updateProfile', formData, {
+            const response = await axiosInstance.put('/users/profile', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data'
                 }
@@ -266,17 +206,15 @@ function Profile() {
 
             const updatedUser = response.data.user
 
-            setUserData(updatedUser)
-            setUser({
-                ...loggedInUser,
-                ...updatedUser
-            })
+            dispatch(upsertProfile(updatedUser))
+            dispatch(patchCurrentUser(updatedUser))
 
             const usernameChanged = updatedUser.username !== username
 
             closeEditProfile()
 
             if (usernameChanged) {
+                dispatch(removeProfileKey(username))
                 navigate(`/profile/${updatedUser.username}`, { replace: true })
             }
         } catch (error) {
